@@ -6,19 +6,19 @@ logger = logging.getLogger("db-migrator.parser")
 
 class FlywayParser:
     # Strict Allowlist: If it's not here, it doesn't run.
-    ALLOWED_COMMANDS = ["migrate", "info", "repair", "validate", "check"]
+    ALLOWED_COMMANDS = ["migrate", "info", "repair", "validate"]
 
     @staticmethod
     def is_command_safe(cmd):
         """Single gatekeeper for all Flyway actions."""
         if cmd in FlywayParser.ALLOWED_COMMANDS:
-            return True, None
+            return True, "OK"
 
         return False, f"Forbidden: Command '{cmd}' is not in the allowed list ({', '.join(FlywayParser.ALLOWED_COMMANDS)})."
 
-    """ Parses the output of the Flyway migration engine. """
     @staticmethod
     def parse(exit_code, output, command):
+        """ Parses the output of the Flyway migration engine. """
         if exit_code != 0:
             return FlywayParser._handle_error(output, command)
         return FlywayParser._handle_success(output, command)
@@ -76,9 +76,9 @@ class FlywayParser:
 
         return {"success": False, "status": status, "message": msg}
 
-    """ Helper method - handles parsing of successful Flyway executions."""
     @staticmethod
     def _handle_success(output, command):
+        """ Helper method - handles parsing of successful Flyway executions."""
         lines = [l.strip() for l in output.splitlines() if l.strip()]
         resp = {"success": True, "command": command}
 
@@ -94,13 +94,21 @@ class FlywayParser:
             summary = [l for l in lines if "repaired" in l.lower() or "not necessary" in l.lower()]
             resp["message"] = " ".join(summary)
 
+        elif command == "validate":
+            resp["status"] = "VALIDATION_SUCCESS"
+            resp["message"] = "All migrations are valid."
+
         return resp
 
-    """ Helper method - parses the JSON output of 'info' command. """
     @staticmethod
     def _parse_info_json(output, resp):
+        """ Helper method - parses the JSON output of 'info' command. """
         try:
-            data = json.loads(output[output.find('{'):])
+            json_line = next((l for l in output.splitlines() if l.strip().startswith('{')), None)
+            if not json_line:
+                resp.update({"status": "INFO_PARSE_FAILED", "message": "No JSON found in Flyway output"})
+                return resp
+            data = json.loads(str(json_line))
             table = [{"v": m.get("version"), "status": m.get("state"), "date": m.get("installedOnUTC")}
                      for m in data.get("migrations", [])]
             resp.update({

@@ -1,8 +1,10 @@
-import os
 import json
-import boto3
 import logging
+import os
 from typing import Tuple
+
+import boto3
+from botocore.exceptions import ClientError
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger("db-migrator.config")
@@ -28,17 +30,20 @@ def get_db_config():
         response = ssm.get_parameter(Name=param_path, WithDecryption=True)
         return json.loads(response['Parameter']['Value'])
 
-    except ssm.exceptions.ParameterNotFound:
-        logger.critical(f"BOOT_FAILURE: SSM parameter not found: {param_path}")
-        return {"BOOT_ERROR": "SSM parameter not found"}
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
 
-    except ssm.exceptions.AccessDeniedException:
-        logger.critical(f"BOOT_FAILURE: Access denied to SSM parameter: {param_path}")
-        return {"BOOT_ERROR": "Access denied to SSM parameter"}
+        if error_code == 'ParameterNotFound':
+            logger.critical(f"BOOT_FAILURE: SSM parameter not found: {param_path}")
+            return {"BOOT_ERROR": "SSM parameter not found"}
 
-    except json.JSONDecodeError as e:
-        logger.critical(f"BOOT_FAILURE: SSM parameter is not valid JSON: {str(e)}")
-        return {"BOOT_ERROR": f"SSM parameter is not valid JSON: {str(e)}"}
+        elif error_code == 'AccessDeniedException':
+            logger.critical(f"BOOT_FAILURE: Access denied to SSM parameter: {param_path}")
+            return {"BOOT_ERROR": "Access denied to SSM parameter"}
+
+        else:
+            logger.critical(f"BOOT_FAILURE: SSM error {error_code}: {str(e)}")
+            return {"BOOT_ERROR": str(e)}
 
     except Exception as e:
         logger.critical(f"BOOT_FAILURE: {str(e)}")

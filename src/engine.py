@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import subprocess
 
 import boto3
@@ -36,14 +37,13 @@ class MigrationEngine:
 
         try:
             # Clean up previous runs in the Lambda ephemeral storage
-            if os.path.exists(TMP_DIR):
-                subprocess.run(["rm", "-rf", TMP_DIR], check=True)
+            shutil.rmtree(TMP_DIR, ignore_errors=True)
             os.makedirs(TMP_DIR)
 
             zip_path = os.path.join("/tmp", "scripts.zip")
             logger.info(f"S3: Downloading s3://{bucket}/{key} to {zip_path}")
 
-            s3 = boto3.client('s3')
+            s3 = boto3.client('s3', region_name=os.getenv('AWS_DEFAULT_REGION'))
             s3.download_file(bucket, key, zip_path)
 
             # Unzip scripts to the TMP_DIR
@@ -56,6 +56,7 @@ class MigrationEngine:
             if result.returncode != 0:
                 raise Exception(f"UNZIP_ERROR: {result.stderr}")
 
+            os.remove(zip_path)
             logger.info(f"ARTIFACTS: Successfully extracted to {TMP_DIR}")
             return TMP_DIR
 
@@ -81,13 +82,17 @@ class MigrationEngine:
             "-validateMigrationNaming=true",
             command
         ]
-        if extra_args: cmd.extend(extra_args)
+        if extra_args:
+            cmd.extend(extra_args)
 
         logger.info(f"Flyway: Connecting to [{DB_CONFIG['host']}], running command: [{command}] with args: {extra_args}")
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        stdout = process.stdout
+        if stdout is None:
+            raise Exception("PROCESS_ERROR: Failed to open stdout pipe")
         output = []
-        for line in process.stdout:
+        for line in stdout:
             print(line, end='')
             output.append(line)
         process.wait()
