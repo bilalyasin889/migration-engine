@@ -22,9 +22,9 @@ def get_db_config():
             "port": int(os.getenv("DB_PORT", 3306)),
         }
 
+    param_path = f"/{ENV}/phase-1/db_config"
     try:
         ssm = boto3.client('ssm')
-        param_path = f"/{ENV}/phase-1/db_config"
         response = ssm.get_parameter(Name=param_path, WithDecryption=True)
         return json.loads(response['Parameter']['Value'])
 
