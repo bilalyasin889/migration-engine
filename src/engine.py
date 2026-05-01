@@ -5,7 +5,7 @@ import subprocess
 
 import boto3
 
-from config import DB_CONFIG, ENV
+from config import DB_CONFIG, ENV, validate_db_config
 from parser import FlywayParser
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -96,7 +96,14 @@ class MigrationEngine:
 
     def run(self, event):
         try:
-            logger.info("STARTING_MIGRATION")
+            logger.info("STARTING MIGRATION")
+            is_valid, error_msg = validate_db_config(DB_CONFIG)
+            if not is_valid:
+                return {
+                    "success": False,
+                    "status": "CONFIG_ERROR",
+                    "message": error_msg
+                }
 
             command = event.get("command", "migrate").lower()
             is_safe, error_msg = FlywayParser.is_command_safe(command)

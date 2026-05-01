@@ -25,6 +25,5 @@ services:
       DB_HOST: mysql-db
       DB_USER: root
       DB_PASSWORD: root
-      DB_NAME: test
       DB_PORT: 3306
     entrypoint: ["python", "src/engine.py"]
