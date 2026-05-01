@@ -5,6 +5,16 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger("db-migrator.parser")
 
 class FlywayParser:
+    # Strict Allowlist: If it's not here, it doesn't run.
+    ALLOWED_COMMANDS = ["migrate", "info", "repair", "validate", "check"]
+
+    @staticmethod
+    def is_command_safe(cmd):
+        """Single gatekeeper for all Flyway actions."""
+        if cmd in FlywayParser.ALLOWED_COMMANDS:
+            return True, None
+
+        return False, f"Forbidden: Command '{cmd}' is not in the allowed list ({', '.join(FlywayParser.ALLOWED_COMMANDS)})."
 
     """ Parses the output of the Flyway migration engine. """
     @staticmethod
@@ -54,7 +64,12 @@ class FlywayParser:
 
         elif category == "SQL_SYNTAX_ERROR":
             file = location.split("/")[-1].replace(")", "") or "Unknown Script"
-            msg = f"MIGRATION_FAILED: {file} at Line {line_num}. Details: {db_msg}. Fix and 'repair'."
+            msg = (
+                f"MIGRATION_FAILED: {file} at Line {line_num}. Details: {db_msg}. "
+                "ACTION REQUIRED: 1. Fix the issue in the script (ensure it is idempotent). "
+                "2. Trigger 'repair' command manually. "
+                "3. Commit changes and re-trigger migration."
+            )
 
         else:
             msg = f"{category}: {db_msg or 'Check Flyway logs.'}"

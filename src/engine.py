@@ -63,8 +63,15 @@ class MigrationEngine:
             # Re-wrap as an Artifact Error for the main 'run' method to catch
             raise Exception(f"ARTIFACT_ERROR: {str(e)}")
 
-    def _execute_flyway(self, source, command, extra_args=None):
+    def _execute_flyway(self, source, command):
         jdbc = f"jdbc:mysql://{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+
+        extra_args = []
+        if command == "validate":
+            extra_args = ["-ignoreMigrationPatterns=*:pending"]
+        elif command == "info":
+            extra_args = ["-outputType=json"]
+
         cmd = [
             "flyway",
             f"-url={jdbc}",
@@ -89,12 +96,22 @@ class MigrationEngine:
 
     def run(self, event):
         try:
+            logger.info("STARTING_MIGRATION")
+
+            command = event.get("command", "migrate").lower()
+            is_safe, error_msg = FlywayParser.is_command_safe(command)
+            if not is_safe:
+                return {
+                    "success": False,
+                    "status": "FORBIDDEN_COMMAND",
+                    "message": error_msg
+                }
+
             source = "./test" if ENV == "local" else self._prepare_artifacts(event)
-            command = event.get("command", "migrate")
 
             # Pre-flight Validation
             if command == "migrate":
-                code, out = self._execute_flyway(source, "validate", ["-ignoreMigrationPatterns=*:pending"])
+                code, out = self._execute_flyway(source, "validate")
 
                 target_table = "flyway_schema_history"
                 history_msg = f"Schema history table `{DB_CONFIG['database']}`.`{target_table}` does not exist yet"
@@ -105,8 +122,7 @@ class MigrationEngine:
                 logger.info("PRE-FLIGHT_VALIDATION_PASSED")
 
             # Main Execution
-            args = ["-outputType=json"] if command == "info" else []
-            code, out = self._execute_flyway(source, command, args)
+            code, out = self._execute_flyway(source, command)
 
             response = FlywayParser.parse(code, out, command)
 
